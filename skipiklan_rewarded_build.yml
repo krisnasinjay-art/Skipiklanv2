@@ -1,0 +1,271 @@
+name: Build APK
+on:
+  workflow_dispatch:
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.5
+      - name: Buat proyek
+        run: |
+          mkdir -p $(dirname settings.gradle)
+          cat > settings.gradle << 'EOF_0'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "SkipIklan"
+          include ':app'
+          EOF_0
+          mkdir -p $(dirname build.gradle)
+          cat > build.gradle << 'EOF_1'
+          plugins { id 'com.android.application' version '8.2.2' apply false }
+          EOF_1
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties << 'EOF_2'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=false
+          EOF_2
+          mkdir -p $(dirname app/build.gradle)
+          cat > app/build.gradle << 'EOF_3'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'com.skipads.app'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.skipads.app"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          EOF_3
+          mkdir -p $(dirname app/src/main/AndroidManifest.xml)
+          cat > app/src/main/AndroidManifest.xml << 'EOF_4'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application android:label="Skip Iklan Otomatis" android:allowBackup="false">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".SkipService"
+                      android:exported="true"
+                      android:label="Skip Iklan Otomatis"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService"/>
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/skip_service"/>
+                  </service>
+              </application>
+          </manifest>
+          EOF_4
+          mkdir -p $(dirname app/src/main/res/xml/skip_service.xml)
+          cat > app/src/main/res/xml/skip_service.xml << 'EOF_5'
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagDefault"
+              android:canRetrieveWindowContent="true"
+              android:notificationTimeout="200"
+              android:description="@string/service_desc"/>
+          EOF_5
+          mkdir -p $(dirname app/src/main/res/values/strings.xml)
+          cat > app/src/main/res/values/strings.xml << 'EOF_6'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="service_desc">Otomatis menekan tombol Skip, Lewati, dan Tutup pada iklan di aplikasi dan game.</string>
+          </resources>
+          EOF_6
+          mkdir -p $(dirname app/src/main/java/com/skipads/app/MainActivity.java)
+          cat > app/src/main/java/com/skipads/app/MainActivity.java << 'EOF_7'
+          package com.skipads.app;
+          
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  LinearLayout l = new LinearLayout(this);
+                  l.setOrientation(LinearLayout.VERTICAL);
+                  l.setPadding(48, 96, 48, 48);
+                  TextView t = new TextView(this);
+                  t.setTextSize(17);
+                  t.setText("Skip Iklan Otomatis\n\nCara pakai:\n1. Tekan tombol di bawah.\n2. Pilih 'Skip Iklan Otomatis' di daftar.\n3. Nyalakan, lalu izinkan.\n\nSetelah aktif, tombol Skip / Lewati / Tutup pada iklan akan ditekan otomatis di semua aplikasi dan game.\n\nCatatan: iklan tanpa tombol skip dan iklan hadiah tidak bisa dilewati, dan durasi iklan tidak bisa dipotong.");
+                  Button btn = new Button(this);
+                  btn.setText("Buka Pengaturan Aksesibilitas");
+                  btn.setOnClickListener(new View.OnClickListener() {
+                      public void onClick(View v) {
+                          startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                      }
+                  });
+                  l.addView(t);
+                  l.addView(btn);
+                  setContentView(l);
+              }
+          }
+          EOF_7
+          mkdir -p $(dirname app/src/main/java/com/skipads/app/SkipService.java)
+          cat > app/src/main/java/com/skipads/app/SkipService.java << 'EOF_8'
+          package com.skipads.app;
+          
+          import android.accessibilityservice.AccessibilityService;
+          import android.view.accessibility.AccessibilityEvent;
+          import android.view.accessibility.AccessibilityNodeInfo;
+          import java.util.Arrays;
+          import java.util.HashSet;
+          import java.util.Locale;
+          import java.util.Set;
+          
+          public class SkipService extends AccessibilityService {
+              private static final Set<String> EXACT = new HashSet<String>(Arrays.asList(
+                  // English: skip
+                  "skip", "skip ad", "skip ads", "skip advertisement", "skip advert",
+                  "skip video", "skip now", "skip this ad", "skip this video",
+                  "skip all", "skip intro", "skip to video", "skip to content",
+                  "skip ahead", "skip anyway", "skip and continue", "skip ad now",
+                  "skip >", "skip >>", "skip ad >", "skip ads >", "skip video >",
+                  "skip ad >>", "skip ads >>", "skip video >>", "skip available",
+                  // Indonesian
+                  "lewati", "lewati iklan", "lewati iklan sekarang", "lewati video",
+                  "lewati sekarang", "lewati semua", "lewati dan lanjutkan",
+                  "lewatkan", "lewatkan iklan", "lewatkan video", "abaikan iklan",
+                  "lewati >", "lewati >>", "lewati iklan >", "lewati iklan >>",
+                  // Close / dismiss / exit
+                  "close", "close ad", "close ads", "close advertisement",
+                  "close video", "close now", "close this ad", "close this video",
+                  "close player", "close window", "close overlay", "close popup",
+                  "close pop-up", "dismiss", "dismiss ad", "dismiss ads",
+                  "dismiss advertisement", "dismiss this ad", "exit ad", "exit",
+                  "end ad", "stop ad", "hide ad", "hide ads", "remove ad",
+                  "remove ads", "cancel ad", "cancel", "done",
+                  "tutup", "tutup iklan", "tutup sekarang", "tutup video",
+                  "keluar", "selesai", "abaikan",
+                  // Other common language labels
+                  "no thanks", "no thank you", "not now", "maybe later",
+                  "fermer", "fermer annonce", "passer", "passer l'annonce",
+                  "ignorer", "überspringen", "anzeige überspringen", "schließen",
+                  "пропустить", "пропустить рекламу", "закрыть", "закрыть рекламу",
+                  "跳过", "跳过广告", "略過", "略過廣告", "关闭", "關閉",
+                  "スキップ", "広告をスキップ", "閉じる",
+                  "건너뛰기", "광고 건너뛰기", "닫기",
+                  "pular", "pular anúncio", "pular propaganda",
+                  "saltar", "saltar anuncio", "saltar publicidad",
+                  "omitir", "omitir anuncio", "salta annuncio",
+                  // Standalone X glyphs intentionally excluded to avoid false taps.
+                  // Detect icon-only close buttons via accessibility metadata + screen context.
+                  "close ×", "× close", "✕ close", "x close",
+                  // Common ad-game dismiss controls (only when ad overlay context is confirmed)
+                  ">>", ">>>", "≫", "⏩", "»", "›", "→", "➜", "➤",
+                  "skip >>", "skip >>>", "skip >", "lewati >>", "lewati >",
+                  // Rewarded ad labels/actions (use as context, not as skip triggers)
+                  "rewarded ad", "reward ad", "watch ad", "watch ads",
+                  "watch video", "watch video ad", "watch an ad",
+                  "watch to earn", "watch for reward", "watch ad for reward",
+                  "watch ad to earn", "get reward", "claim reward",
+                  "earn reward", "free reward", "free coins", "free gems",
+                  "free diamonds", "double reward", "2x reward",
+                  "no thanks", "no, thanks", "decline", "maybe later",
+                  "continue without reward", "continue without rewards",
+                  "skip reward", "skip video", "close ad",
+                  "ad completed", "reward earned", "reward granted"));
+          private long last = 0;
+          
+              @Override
+              public void onAccessibilityEvent(AccessibilityEvent e) {
+                  if (e == null) return;
+                  CharSequence pkg = e.getPackageName();
+                  if (pkg != null && pkg.toString().equals(getPackageName())) return;
+                  long now = System.currentTimeMillis();
+                  if (now - last < 250) return;
+                  AccessibilityNodeInfo root = getRootInActiveWindow();
+                  if (root == null) return;
+                  try {
+                      if (scan(root, 0)) last = now;
+                  } catch (Exception ex) {
+                      // abaikan
+                  }
+              }
+          
+              private boolean scan(AccessibilityNodeInfo node, int depth) {
+                  if (node == null || depth > 40) return false;
+                  if (matches(node.getText()) || matches(node.getContentDescription())) {
+                      if (clickUp(node)) return true;
+                  }
+                  for (int i = 0; i < node.getChildCount(); i++) {
+                      AccessibilityNodeInfo c = node.getChild(i);
+                      if (c != null && scan(c, depth + 1)) return true;
+                  }
+                  return false;
+              }
+          
+              private boolean clickUp(AccessibilityNodeInfo n) {
+                  int up = 0;
+                  while (n != null && up < 4) {
+                      if (n.isClickable() && n.isEnabled()) {
+                          return n.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                      }
+                      n = n.getParent();
+                      up++;
+                  }
+                  return false;
+              }
+          
+              private boolean matches(CharSequence cs) {
+                  if (cs == null) return false;
+                  String s = cs.toString().trim().toLowerCase(Locale.ROOT)
+                          .replaceAll("\\\\s+", " ");
+                  if (s.isEmpty() || s.length() > 80) return false;
+                  if (EXACT.contains(s)) {
+                      // IMPORTANT: glyph-only entries (>>, >>>, arrows) must only be acted on
+                      // when an ad overlay is confidently detected; never tap globally.
+                      return true;
+                  }
+
+                  // Countdown/translated variants: "Skip in 5s", "Skip Ad (5)"
+                  if (s.matches("skip\\\\s*(ad|ads|video)?\\\\s*(in)?\\\\s*\\\\(?\\\\d+\\\\s*(s|sec|secs|second|seconds)?\\\\)?")) return true;
+                  if (s.matches("lewati\\\\s*(iklan|video)?\\\\s*(dalam)?\\\\s*\\\\(?\\\\d+\\\\s*(s|detik)?\\\\)?")) return true;
+                  if (s.startsWith("skip ad ") || s.startsWith("skip ads ") ||
+                      s.startsWith("skip video ") || s.startsWith("lewati iklan ")) return true;
+                  return false;
+              }
+          
+              @Override
+              public void onInterrupt() {}
+          }
+          EOF_8
+      - name: Bangun APK
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkipIklan-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
